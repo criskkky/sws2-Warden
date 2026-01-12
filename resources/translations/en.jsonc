@@ -1,0 +1,19 @@
+{
+  "warden.error.active": "A warden is already active!",
+  "warden.error.team_ct": "You must be on the CT team to become warden.",
+  "warden.success.become": "You are now the warden!",
+  "warden.log.become": "Player {0} became warden.",
+  "warden.error.not_warden": "You are not the warden.",
+  "warden.success.unwarden": "You are no longer the warden.",
+  "warden.log.unwarden": "Player {0} is no longer warden.",
+  "command.error.permission": "You don't have permission to use this command.",
+  "warden.admin.removed": "Admin {0} removed the warden.",
+  "warden.command.usage.sw": "Usage: !sw <player>",
+  "command.error.player_not_found": "Player '{0}' not found.",
+  "warden.error.target_not_ct": "{0} is not on the CT team.",
+  "warden.admin.set": "Admin {0} set {1} as warden.",
+  "warden.error.ratio_full": "CT Team is full (Ratio: 1 CT per 2 Ts).",
+  "warden.log.died": "Warden died.",
+  "warden.log.disconnected": "Warden disconnected.",
+  "warden.log.team_change": "Warden changed team."
+}

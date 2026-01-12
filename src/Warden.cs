@@ -1,0 +1,275 @@
+using System;
+using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
+using SwiftlyS2.Shared;
+using SwiftlyS2.Shared.Commands;
+using SwiftlyS2.Shared.Events;
+using SwiftlyS2.Shared.GameEventDefinitions;
+using SwiftlyS2.Shared.Misc;
+using SwiftlyS2.Shared.Players;
+using SwiftlyS2.Shared.Plugins;
+
+namespace Warden;
+
+public partial class Warden : BasePlugin
+{
+    private int? wardenUserId = null;
+
+    public Warden(ISwiftlyCore core) : base(core)
+    {
+    }
+
+    public override void ConfigureSharedInterface(IInterfaceManager interfaceManager)
+    {
+    }
+
+    public override void UseSharedInterface(IInterfaceManager interfaceManager)
+    {
+    }
+
+    public override void Load(bool hotReload)
+    {
+        // Register Commands
+        Core.Command.RegisterCommand("w", OnWarden);
+        Core.Command.RegisterCommand("uw", OnUnwarden);
+        Core.Command.RegisterCommand("rw", OnRemoveWarden, false, "warden.command.remove");
+        Core.Command.RegisterCommand("sw", OnSetWarden, false, "warden.command.set");
+
+        // Register Event Hooks
+        Core.GameEvent.HookPre<EventRoundEnd>(OnRoundEnd);
+        Core.GameEvent.HookPre<EventPlayerDeath>(OnPlayerDeath);
+        Core.GameEvent.HookPre<EventPlayerDisconnect>(OnPlayerDisconnect);
+        Core.GameEvent.HookPre<EventPlayerTeam>(OnPlayerTeam);
+
+        if (hotReload)
+        {
+            wardenUserId = null;
+        }
+    }
+
+    public override void Unload()
+    {
+        wardenUserId = null;
+    }
+
+    // Commands
+    public void OnWarden(ICommandContext context)
+    {
+        if (context.Sender == null) return;
+        var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+
+        if (wardenUserId != null)
+        {
+            context.Reply(localizer["warden.error.active"]);
+            return;
+        }
+
+        if (context.Sender.Controller.TeamNum != (byte)Team.CT)
+        {
+            context.Reply(localizer["warden.error.team_ct"]);
+            return;
+        }
+
+        wardenUserId = context.Sender.PlayerID;
+        context.Reply(localizer["warden.success.become"]);
+        Console.WriteLine($"Player {context.Sender.Controller.PlayerName} became warden.");
+    }
+
+    public void OnUnwarden(ICommandContext context)
+    {
+        if (context.Sender == null) return;
+        var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+
+        if (wardenUserId != context.Sender.PlayerID)
+        {
+            context.Reply(localizer["warden.error.not_warden"]);
+            return;
+        }
+
+        wardenUserId = null;
+        context.Reply(localizer["warden.success.unwarden"]);
+        Console.WriteLine($"Player {context.Sender.Controller.PlayerName} is no longer warden.");
+    }
+
+    public void OnRemoveWarden(ICommandContext context)
+    {
+        if (context.Sender != null)
+        {
+            var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+            if (!Core.Permission.PlayerHasPermission(context.Sender.SteamID, "warden.command.remove"))
+            {
+                context.Reply(localizer["command.error.permission"]);
+                return;
+            }
+        }
+
+        wardenUserId = null;
+        string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
+
+        if (context.Sender != null)
+        {
+            var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+            context.Reply(localizer["warden.admin.removed", adminName]);
+        }
+        else
+        {
+            context.Reply($"Admin {adminName} removed the warden.");
+        }
+        Console.WriteLine($"Admin {adminName} removed the warden.");
+    }
+
+    public void OnSetWarden(ICommandContext context)
+    {
+        if (context.Sender != null)
+        {
+            var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+            if (!Core.Permission.PlayerHasPermission(context.Sender.SteamID, "warden.command.set"))
+            {
+                context.Reply(localizer["command.error.permission"]);
+                return;
+            }
+        }
+
+        if (context.Args.Length == 0)
+        {
+            if (context.Sender != null)
+            {
+                var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+                context.Reply(localizer["warden.command.usage.sw"]);
+            }
+            else
+            {
+                context.Reply("Usage: !sw <player>");
+            }
+            return;
+        }
+
+        var targetName = context.Args[0];
+        // Simple search by name substring (first match) - keeping it simple for now
+        var target = Core.PlayerManager.GetAllPlayers()
+            .FirstOrDefault(p => p.Controller.PlayerName.Contains(targetName, StringComparison.OrdinalIgnoreCase));
+
+        if (target == null)
+        {
+            if (context.Sender != null)
+            {
+                var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+                context.Reply(localizer["command.error.player_not_found", targetName]);
+            }
+            else
+            {
+                context.Reply($"Player '{targetName}' not found.");
+            }
+            return;
+        }
+
+        if (target.Controller.TeamNum != (byte)Team.CT)
+        {
+            if (context.Sender != null)
+            {
+                var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+                context.Reply(localizer["warden.error.target_not_ct", target.Controller.PlayerName]);
+            }
+            else
+            {
+                context.Reply($"{target.Controller.PlayerName} is not on the CT team.");
+            }
+            return;
+        }
+
+        wardenUserId = target.PlayerID;
+        string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
+
+        if (context.Sender != null)
+        {
+            var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
+            context.Reply(localizer["warden.admin.set", adminName, target.Controller.PlayerName]);
+        }
+        else
+        {
+            context.Reply($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
+        }
+        Console.WriteLine($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
+    }
+
+    // Hooks
+    [ClientCommandHookHandler]
+    public HookResult OnClientCommand(int playerId, string command)
+    {
+        if (command.StartsWith("jointeam 3")) // Attempting to join CT
+        {
+            // Calculate ratio O(N)
+            int tCount = 0;
+            int ctCount = 0;
+
+            foreach (var p in Core.PlayerManager.GetAllPlayers())
+            {
+                if (p == null || !p.IsValid) continue; // Basic validation
+                if (p.Controller.TeamNum == (byte)Team.T) tCount++;
+                else if (p.Controller.TeamNum == (byte)Team.CT) ctCount++;
+            }
+
+            // Formula: Always allow at least 1 CT. Then 1 CT per 2 Ts.
+            int allowedCts = Math.Max(1, tCount / 2);
+
+            if (ctCount >= allowedCts)
+            {
+                var player = Core.PlayerManager.GetPlayer(playerId);
+                if (player != null)
+                {
+                    var localizer = Core.Translation.GetPlayerLocalizer(player);
+                    player.SendChat(localizer["warden.error.ratio_full"]);
+                }
+                return HookResult.Stop;
+            }
+        }
+
+        return HookResult.Continue;
+    }
+
+    // Events
+    public HookResult OnRoundEnd(EventRoundEnd @event)
+    {
+        wardenUserId = null;
+        return HookResult.Continue;
+    }
+
+    public HookResult OnPlayerDeath(EventPlayerDeath @event)
+    {
+        var victimId = @event.UserId; // Userid is int
+        if (victimId == wardenUserId)
+        {
+            wardenUserId = null;
+            // Optional: Broadcast "Warden has died!"
+            Console.WriteLine("Warden died.");
+        }
+        return HookResult.Continue;
+    }
+
+    public HookResult OnPlayerDisconnect(EventPlayerDisconnect @event)
+    {
+        // EventPlayerDisconnect usually has "userid" as the disconnecting player
+        var playerId = @event.UserId;
+        if (playerId == wardenUserId)
+        {
+            wardenUserId = null;
+            Console.WriteLine("Warden disconnected.");
+        }
+        return HookResult.Continue;
+    }
+
+    public HookResult OnPlayerTeam(EventPlayerTeam @event)
+    {
+        var playerId = @event.UserId;
+        if (playerId == wardenUserId)
+        {
+            // Check if they left CT
+            if (@event.Team != (byte)Team.CT)
+            {
+                wardenUserId = null;
+                Console.WriteLine("Warden changed team.");
+            }
+        }
+        return HookResult.Continue;
+    }
+}
