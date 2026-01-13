@@ -1,0 +1,21 @@
+{
+  "warden.error.active": "¡Ya hay un warden activo!",
+  "warden.error.team_ct": "Debes estar en el equipo CT para convertirte en warden.",
+  "warden.success.become": "¡Ahora eres el warden!",
+  "warden.log.become": "El jugador {0} se convirtió en warden.",
+  "warden.error.not_warden": "No eres el warden.",
+  "warden.success.unwarden": "Ya no eres el warden.",
+  "warden.log.unwarden": "El jugador {0} ya no es warden.",
+  "command.error.permission": "No tienes permiso para usar este comando.",
+  "warden.admin.removed": "El admin {0} removió al warden.",
+  "warden.command.usage.sw": "Uso: !sw <jugador>",
+  "command.error.player_not_found": "Jugador '{0}' no encontrado.",
+  "warden.error.target_not_ct": "{0} no está en el equipo CT.",
+  "warden.admin.set": "El admin {0} estableció a {1} como warden.",
+  "warden.error.ratio_full": "El equipo CT está lleno (Ratio: 1 CT por 2 Ts).",
+  "warden.log.died": "El warden murió.",
+  "warden.log.disconnected": "El warden se desconectó.",
+  "warden.log.team_change": "El warden cambió de equipo.",
+  "warden.info.current": "El warden actual es {0}.",
+  "warden.incentive.none": "¡No hay warden! ¡Escribe !w para tomar el control!"
+}
