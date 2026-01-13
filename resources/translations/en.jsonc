@@ -15,5 +15,7 @@
   "warden.error.ratio_full": "CT Team is full (Ratio: 1 CT per 2 Ts).",
   "warden.log.died": "Warden died.",
   "warden.log.disconnected": "Warden disconnected.",
-  "warden.log.team_change": "Warden changed team."
+  "warden.log.team_change": "Warden changed team.",
+  "warden.info.current": "The current warden is {0}.",
+  "warden.incentive.none": "There is no Warden! Type !w to take control!"
 }

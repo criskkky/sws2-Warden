@@ -14,6 +14,7 @@ namespace Warden;
 public partial class Warden : BasePlugin
 {
     private int? wardenUserId = null;
+    private System.Threading.CancellationTokenSource? incentiveTimerToken = null;
 
     public Warden(ISwiftlyCore core) : base(core)
     {
@@ -36,6 +37,7 @@ public partial class Warden : BasePlugin
         Core.Command.RegisterCommand("sw", OnSetWarden, false, "warden.command.set");
 
         // Register Event Hooks
+        Core.GameEvent.HookPre<EventRoundStart>(OnRoundStart);
         Core.GameEvent.HookPre<EventRoundEnd>(OnRoundEnd);
         Core.GameEvent.HookPre<EventPlayerDeath>(OnPlayerDeath);
         Core.GameEvent.HookPre<EventPlayerDisconnect>(OnPlayerDisconnect);
@@ -50,6 +52,28 @@ public partial class Warden : BasePlugin
     public override void Unload()
     {
         wardenUserId = null;
+        incentiveTimerToken?.Cancel();
+        incentiveTimerToken = null;
+    }
+
+    // Helper Methods
+    private void AnnounceWardenChange(string translationKey, params object[] args)
+    {
+        foreach (var player in Core.PlayerManager.GetAllPlayers())
+        {
+            if (player == null || !player.IsValid) continue;
+            var localizer = Core.Translation.GetPlayerLocalizer(player);
+            string message = localizer[translationKey, args];
+            player.SendCenterHTML(message, 5000);
+        }
+    }
+
+    private string? GetWardenName()
+    {
+        if (wardenUserId == null) return null;
+        var warden = Core.PlayerManager.GetAllPlayers()
+            .FirstOrDefault(p => p != null && p.IsValid && p.PlayerID == wardenUserId);
+        return warden?.Controller.PlayerName;
     }
 
     // Commands
@@ -60,7 +84,23 @@ public partial class Warden : BasePlugin
 
         if (wardenUserId != null)
         {
-            context.Reply(localizer["warden.error.active"]);
+            // If non-CT, show current warden
+            if (context.Sender.Controller.TeamNum != (byte)Team.CT)
+            {
+                var wardenName = GetWardenName();
+                if (wardenName != null)
+                {
+                    context.Reply(localizer["warden.info.current", wardenName]);
+                }
+                else
+                {
+                    context.Reply(localizer["warden.error.active"]);
+                }
+            }
+            else
+            {
+                context.Reply(localizer["warden.error.active"]);
+            }
             return;
         }
 
@@ -72,6 +112,12 @@ public partial class Warden : BasePlugin
 
         wardenUserId = context.Sender.PlayerID;
         context.Reply(localizer["warden.success.become"]);
+
+        // Cancel incentive timer since we now have a warden
+        incentiveTimerToken?.Cancel();
+        incentiveTimerToken = null;
+
+        AnnounceWardenChange("warden.log.become", context.Sender.Controller.PlayerName);
         Console.WriteLine($"Player {context.Sender.Controller.PlayerName} became warden.");
     }
 
@@ -86,9 +132,11 @@ public partial class Warden : BasePlugin
             return;
         }
 
+        var playerName = context.Sender.Controller.PlayerName;
         wardenUserId = null;
         context.Reply(localizer["warden.success.unwarden"]);
-        Console.WriteLine($"Player {context.Sender.Controller.PlayerName} is no longer warden.");
+        AnnounceWardenChange("warden.log.unwarden", playerName);
+        Console.WriteLine($"Player {playerName} is no longer warden.");
     }
 
     public void OnRemoveWarden(ICommandContext context)
@@ -103,8 +151,8 @@ public partial class Warden : BasePlugin
             }
         }
 
-        wardenUserId = null;
         string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
+        wardenUserId = null;
 
         if (context.Sender != null)
         {
@@ -115,6 +163,7 @@ public partial class Warden : BasePlugin
         {
             context.Reply($"Admin {adminName} removed the warden.");
         }
+        AnnounceWardenChange("warden.admin.removed", adminName);
         Console.WriteLine($"Admin {adminName} removed the warden.");
     }
 
@@ -177,8 +226,12 @@ public partial class Warden : BasePlugin
             return;
         }
 
-        wardenUserId = target.PlayerID;
         string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
+        wardenUserId = target.PlayerID;
+
+        // Cancel incentive timer since we now have a warden
+        incentiveTimerToken?.Cancel();
+        incentiveTimerToken = null;
 
         if (context.Sender != null)
         {
@@ -189,6 +242,7 @@ public partial class Warden : BasePlugin
         {
             context.Reply($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
         }
+        AnnounceWardenChange("warden.admin.set", adminName, target.Controller.PlayerName);
         Console.WriteLine($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
     }
 
@@ -218,7 +272,7 @@ public partial class Warden : BasePlugin
                 if (player != null)
                 {
                     var localizer = Core.Translation.GetPlayerLocalizer(player);
-                    player.SendChat(localizer["warden.error.ratio_full"]);
+                    player.SendCenterHTML(localizer["warden.error.ratio_full"], 5000);
                 }
                 return HookResult.Stop;
             }
@@ -228,19 +282,47 @@ public partial class Warden : BasePlugin
     }
 
     // Events
+    public HookResult OnRoundStart(EventRoundStart @event)
+    {
+        // Cancel any previous timer
+        incentiveTimerToken?.Cancel();
+
+        // Start 5-second timer to check for warden
+        incentiveTimerToken = Core.Scheduler.DelayBySeconds(5f, () =>
+        {
+            if (wardenUserId == null)
+            {
+                foreach (var player in Core.PlayerManager.GetAllPlayers())
+                {
+                    if (player == null || !player.IsValid) continue;
+                    var localizer = Core.Translation.GetPlayerLocalizer(player);
+                    player.SendChat(localizer["warden.incentive.none"]);
+                }
+            }
+            incentiveTimerToken = null;
+        });
+        return HookResult.Continue;
+    }
+
     public HookResult OnRoundEnd(EventRoundEnd @event)
     {
         wardenUserId = null;
+        incentiveTimerToken?.Cancel();
+        incentiveTimerToken = null;
         return HookResult.Continue;
     }
 
     public HookResult OnPlayerDeath(EventPlayerDeath @event)
     {
-        var victimId = @event.UserId; // Userid is int
+        var victimId = @event.UserId;
         if (victimId == wardenUserId)
         {
+            var wardenName = GetWardenName();
             wardenUserId = null;
-            // Optional: Broadcast "Warden has died!"
+            if (wardenName != null)
+            {
+                AnnounceWardenChange("warden.log.died", wardenName);
+            }
             Console.WriteLine("Warden died.");
         }
         return HookResult.Continue;
@@ -248,11 +330,15 @@ public partial class Warden : BasePlugin
 
     public HookResult OnPlayerDisconnect(EventPlayerDisconnect @event)
     {
-        // EventPlayerDisconnect usually has "userid" as the disconnecting player
         var playerId = @event.UserId;
         if (playerId == wardenUserId)
         {
+            var wardenName = GetWardenName();
             wardenUserId = null;
+            if (wardenName != null)
+            {
+                AnnounceWardenChange("warden.log.disconnected", wardenName);
+            }
             Console.WriteLine("Warden disconnected.");
         }
         return HookResult.Continue;
@@ -266,7 +352,12 @@ public partial class Warden : BasePlugin
             // Check if they left CT
             if (@event.Team != (byte)Team.CT)
             {
+                var wardenName = GetWardenName();
                 wardenUserId = null;
+                if (wardenName != null)
+                {
+                    AnnounceWardenChange("warden.log.team_change", wardenName);
+                }
                 Console.WriteLine("Warden changed team.");
             }
         }
