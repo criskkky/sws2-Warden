@@ -31,7 +31,7 @@ public partial class Warden : BasePlugin
     {
     }
 
-    public override void Load()
+    public override void Load(bool hotReload)
     {
         // Use CreateOrFind to handle both initial load and hot reload scenarios
         wardenEnabledConvar = Core.ConVar.CreateOrFind<bool>("warden_enabled", "Enable/Disable Warden plugin", false);
