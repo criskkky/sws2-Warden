@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Commands;
+using SwiftlyS2.Shared.Convars;
 using SwiftlyS2.Shared.Events;
 using SwiftlyS2.Shared.GameEventDefinitions;
 using SwiftlyS2.Shared.Misc;
@@ -15,6 +16,8 @@ public partial class Warden : BasePlugin
 {
     private int? wardenUserId = null;
     private System.Threading.CancellationTokenSource? incentiveTimerToken = null;
+    private IConVar<bool>? wardenEnabledConvar;
+    private bool wasPluginEnabled = true;
 
     public Warden(ISwiftlyCore core) : base(core)
     {
@@ -28,8 +31,12 @@ public partial class Warden : BasePlugin
     {
     }
 
-    public override void Load(bool hotReload)
+    public override void Load()
     {
+        // Use CreateOrFind to handle both initial load and hot reload scenarios
+        wardenEnabledConvar = Core.ConVar.CreateOrFind<bool>("warden_enabled", "Enable/Disable Warden plugin", false);
+        Console.WriteLine($"Warden plugin loaded. warden_enabled = {wardenEnabledConvar.Value}");
+
         // Register Commands
         Core.Command.RegisterCommand("w", OnWarden);
         Core.Command.RegisterCommand("uw", OnUnwarden);
@@ -43,13 +50,33 @@ public partial class Warden : BasePlugin
         Core.GameEvent.HookPre<EventPlayerDisconnect>(OnPlayerDisconnect);
         Core.GameEvent.HookPre<EventPlayerTeam>(OnPlayerTeam);
 
-        if (hotReload)
-        {
-            wardenUserId = null;
-        }
+        // Reset warden state on plugin load
+        wardenUserId = null;
     }
 
     public override void Unload()
+    {
+        wardenUserId = null;
+        incentiveTimerToken?.Cancel();
+        incentiveTimerToken = null;
+    }
+
+    private bool IsPluginEnabled()
+    {
+        bool isEnabled = wardenEnabledConvar?.Value ?? false;
+        
+        // Detectar si el plugin se acaba de desactivar
+        if (wasPluginEnabled && !isEnabled)
+        {
+            Console.WriteLine("Warden plugin disabled via warden_enabled, cleaning up state...");
+            CleanupPluginState();
+        }
+        
+        wasPluginEnabled = isEnabled;
+        return isEnabled;
+    }
+
+    private void CleanupPluginState()
     {
         wardenUserId = null;
         incentiveTimerToken?.Cancel();
@@ -79,6 +106,7 @@ public partial class Warden : BasePlugin
     // Commands
     public void OnWarden(ICommandContext context)
     {
+        if (!IsPluginEnabled()) return;
         if (context.Sender == null) return;
         var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
 
@@ -123,6 +151,7 @@ public partial class Warden : BasePlugin
 
     public void OnUnwarden(ICommandContext context)
     {
+        if (!IsPluginEnabled()) return;
         if (context.Sender == null) return;
         var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
 
@@ -141,6 +170,7 @@ public partial class Warden : BasePlugin
 
     public void OnRemoveWarden(ICommandContext context)
     {
+        if (!IsPluginEnabled()) return;
         if (context.Sender != null)
         {
             var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
@@ -169,6 +199,7 @@ public partial class Warden : BasePlugin
 
     public void OnSetWarden(ICommandContext context)
     {
+        if (!IsPluginEnabled()) return;
         if (context.Sender != null)
         {
             var localizer = Core.Translation.GetPlayerLocalizer(context.Sender);
@@ -250,6 +281,7 @@ public partial class Warden : BasePlugin
     [ClientCommandHookHandler]
     public HookResult OnClientCommand(int playerId, string command)
     {
+        if (!IsPluginEnabled()) return HookResult.Continue;
         if (command.StartsWith("jointeam 3")) // Attempting to join CT
         {
             // Calculate ratio O(N)
@@ -284,6 +316,7 @@ public partial class Warden : BasePlugin
     // Events
     public HookResult OnRoundStart(EventRoundStart @event)
     {
+        if (!IsPluginEnabled()) return HookResult.Continue;
         // Cancel any previous timer
         incentiveTimerToken?.Cancel();
 
@@ -306,6 +339,7 @@ public partial class Warden : BasePlugin
 
     public HookResult OnRoundEnd(EventRoundEnd @event)
     {
+        if (!IsPluginEnabled()) return HookResult.Continue;
         wardenUserId = null;
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
@@ -314,6 +348,7 @@ public partial class Warden : BasePlugin
 
     public HookResult OnPlayerDeath(EventPlayerDeath @event)
     {
+        if (!IsPluginEnabled()) return HookResult.Continue;
         var victimId = @event.UserId;
         if (victimId == wardenUserId)
         {
@@ -330,6 +365,7 @@ public partial class Warden : BasePlugin
 
     public HookResult OnPlayerDisconnect(EventPlayerDisconnect @event)
     {
+        if (!IsPluginEnabled()) return HookResult.Continue;
         var playerId = @event.UserId;
         if (playerId == wardenUserId)
         {
@@ -346,6 +382,7 @@ public partial class Warden : BasePlugin
 
     public HookResult OnPlayerTeam(EventPlayerTeam @event)
     {
+        if (!IsPluginEnabled()) return HookResult.Continue;
         var playerId = @event.UserId;
         if (playerId == wardenUserId)
         {
