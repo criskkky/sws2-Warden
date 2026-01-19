@@ -19,6 +19,8 @@ public partial class Warden : BasePlugin
     private IConVar<bool>? wardenEnabledConvar;
     private bool wasPluginEnabled = true;
 
+    private enum LogLevel { Debug, Info, Warning, Error }
+
     public Warden(ISwiftlyCore core) : base(core)
     {
     }
@@ -35,7 +37,7 @@ public partial class Warden : BasePlugin
     {
         // Use CreateOrFind to handle both initial load and hot reload scenarios
         wardenEnabledConvar = Core.ConVar.CreateOrFind<bool>("warden_enabled", "Enable/Disable Warden plugin", false);
-        Console.WriteLine($"Warden plugin loaded. warden_enabled = {wardenEnabledConvar.Value}");
+        Log($"Warden plugin loaded. warden_enabled = {wardenEnabledConvar.Value}", LogLevel.Info);
 
         // Register Commands
         Core.Command.RegisterCommand("w", OnWarden);
@@ -68,7 +70,7 @@ public partial class Warden : BasePlugin
         // Detectar si el plugin se acaba de desactivar
         if (wasPluginEnabled && !isEnabled)
         {
-            Console.WriteLine("Warden plugin disabled via warden_enabled, cleaning up state...");
+            Log("Plugin disabled via warden_enabled, cleaning up state...", LogLevel.Info);
             CleanupPluginState();
         }
         
@@ -84,6 +86,14 @@ public partial class Warden : BasePlugin
     }
 
     // Helper Methods
+    /// <summary>
+    /// Logs a message to console with log level prefix
+    /// </summary>
+    private void Log(string message, LogLevel level = LogLevel.Debug)
+    {
+        Console.WriteLine($"[Warden:{level}] {message}");
+    }
+
     private void AnnounceWardenChange(string translationKey, params object[] args)
     {
         foreach (var player in Core.PlayerManager.GetAllPlayers())
@@ -146,7 +156,7 @@ public partial class Warden : BasePlugin
         incentiveTimerToken = null;
 
         AnnounceWardenChange("warden.log.become", context.Sender.Controller.PlayerName);
-        Console.WriteLine($"Player {context.Sender.Controller.PlayerName} became warden.");
+        Log($"Player {context.Sender.Controller.PlayerName} became warden.", LogLevel.Info);
     }
 
     public void OnUnwarden(ICommandContext context)
@@ -165,7 +175,7 @@ public partial class Warden : BasePlugin
         wardenUserId = null;
         context.Reply(localizer["warden.success.unwarden"]);
         AnnounceWardenChange("warden.log.unwarden", playerName);
-        Console.WriteLine($"Player {playerName} is no longer warden.");
+        Log($"Player {playerName} is no longer warden.", LogLevel.Info);
     }
 
     public void OnRemoveWarden(ICommandContext context)
@@ -194,7 +204,7 @@ public partial class Warden : BasePlugin
             context.Reply($"Admin {adminName} removed the warden.");
         }
         AnnounceWardenChange("warden.admin.removed", adminName);
-        Console.WriteLine($"Admin {adminName} removed the warden.");
+        Log($"Admin {adminName} removed the warden.", LogLevel.Info);
     }
 
     public void OnSetWarden(ICommandContext context)
@@ -274,7 +284,7 @@ public partial class Warden : BasePlugin
             context.Reply($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
         }
         AnnounceWardenChange("warden.admin.set", adminName, target.Controller.PlayerName);
-        Console.WriteLine($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
+        Log($"Admin {adminName} set {target.Controller.PlayerName} as warden.", LogLevel.Info);
     }
 
     // Hooks
@@ -358,7 +368,7 @@ public partial class Warden : BasePlugin
             {
                 AnnounceWardenChange("warden.log.died", wardenName);
             }
-            Console.WriteLine("Warden died.");
+            Log("Warden died.", LogLevel.Info);
         }
         return HookResult.Continue;
     }
@@ -375,7 +385,7 @@ public partial class Warden : BasePlugin
             {
                 AnnounceWardenChange("warden.log.disconnected", wardenName);
             }
-            Console.WriteLine("Warden disconnected.");
+            Log("Warden disconnected.", LogLevel.Info);
         }
         return HookResult.Continue;
     }
@@ -395,7 +405,7 @@ public partial class Warden : BasePlugin
                 {
                     AnnounceWardenChange("warden.log.team_change", wardenName);
                 }
-                Console.WriteLine("Warden changed team.");
+                Log("Warden changed team.", LogLevel.Info);
             }
         }
         return HookResult.Continue;
