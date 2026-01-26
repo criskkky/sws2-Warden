@@ -7,6 +7,7 @@ using SwiftlyS2.Shared.Convars;
 using SwiftlyS2.Shared.Events;
 using SwiftlyS2.Shared.GameEventDefinitions;
 using SwiftlyS2.Shared.Misc;
+using SwiftlyS2.Shared.Natives;
 using SwiftlyS2.Shared.Players;
 using SwiftlyS2.Shared.Plugins;
 
@@ -18,6 +19,7 @@ public partial class Warden : BasePlugin
     private System.Threading.CancellationTokenSource? incentiveTimerToken = null;
     private IConVar<bool>? wardenEnabledConvar;
     private bool wasPluginEnabled = true;
+    private Color? savedWardenColor = null; // Guardar el color original del warden
 
     private enum LogLevel { Debug, Info, Warning, Error }
 
@@ -83,6 +85,7 @@ public partial class Warden : BasePlugin
         wardenUserId = null;
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
+        savedWardenColor = null;
     }
 
     // Helper Methods
@@ -111,6 +114,45 @@ public partial class Warden : BasePlugin
         var warden = Core.PlayerManager.GetAllPlayers()
             .FirstOrDefault(p => p != null && p.IsValid && p.PlayerID == wardenUserId);
         return warden?.Controller.PlayerName;
+    }
+
+    private void SetWardenColor(int playerId, bool isWarden)
+    {
+        var player = Core.PlayerManager.GetPlayer(playerId);
+        if (player == null || !player.IsValid) return;
+        
+        var pawn = player.PlayerPawn;
+        if (pawn == null || !pawn.IsValid) return;
+
+        Core.Scheduler.NextTick(() =>
+        {
+            if (pawn == null || !pawn.IsValid) return;
+            
+            var currentColor = pawn.Render;
+            if (isWarden)
+            {
+                // Guardar el color actual antes de cambiar a azul
+                savedWardenColor = currentColor;
+                
+                // Cambiar solo a azul, manteniendo el alpha actual
+                pawn.Render = new Color((byte)0, (byte)0, (byte)255, currentColor.A);
+            }
+            else
+            {
+                // Restaurar el color original guardado si existe
+                if (savedWardenColor.HasValue)
+                {
+                    pawn.Render = savedWardenColor.Value;
+                    savedWardenColor = null;
+                }
+                else
+                {
+                    // Fallback: restaurar a blanco si no hay color guardado
+                    pawn.Render = new Color((byte)255, (byte)255, (byte)255, currentColor.A);
+                }
+            }
+            pawn.RenderUpdated();
+        });
     }
 
     // Commands
@@ -155,6 +197,9 @@ public partial class Warden : BasePlugin
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
 
+        // Pintar al warden de azul
+        SetWardenColor(context.Sender.PlayerID, true);
+
         AnnounceWardenChange("warden.log.become", context.Sender.Controller.PlayerName);
         Log($"Player {context.Sender.Controller.PlayerName} became warden.", LogLevel.Info);
     }
@@ -172,6 +217,11 @@ public partial class Warden : BasePlugin
         }
 
         var playerName = context.Sender.Controller.PlayerName;
+        var playerId = context.Sender.PlayerID;
+        
+        // Restaurar color antes de quitar el rol
+        SetWardenColor(playerId, false);
+        
         wardenUserId = null;
         context.Reply(localizer["warden.success.unwarden"]);
         AnnounceWardenChange("warden.log.unwarden", playerName);
@@ -192,6 +242,13 @@ public partial class Warden : BasePlugin
         }
 
         string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
+        
+        // Restaurar color del warden anterior si existe
+        if (wardenUserId != null)
+        {
+            SetWardenColor(wardenUserId.Value, false);
+        }
+        
         wardenUserId = null;
 
         if (context.Sender != null)
@@ -268,11 +325,21 @@ public partial class Warden : BasePlugin
         }
 
         string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
+        
+        // Restaurar color del warden anterior si existe
+        if (wardenUserId != null)
+        {
+            SetWardenColor(wardenUserId.Value, false);
+        }
+        
         wardenUserId = target.PlayerID;
 
         // Cancel incentive timer since we now have a warden
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
+        
+        // Pintar al nuevo warden de azul
+        SetWardenColor(target.PlayerID, true);
 
         if (context.Sender != null)
         {
@@ -350,6 +417,13 @@ public partial class Warden : BasePlugin
     public HookResult OnRoundEnd(EventRoundEnd @event)
     {
         if (!IsPluginEnabled()) return HookResult.Continue;
+        
+        // Restaurar color del warden al final de la ronda
+        if (wardenUserId != null)
+        {
+            SetWardenColor(wardenUserId.Value, false);
+        }
+        
         wardenUserId = null;
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
@@ -363,6 +437,10 @@ public partial class Warden : BasePlugin
         if (victimId == wardenUserId)
         {
             var wardenName = GetWardenName();
+            
+            // Restaurar color
+            SetWardenColor(victimId, false);
+            
             wardenUserId = null;
             if (wardenName != null)
             {
@@ -380,6 +458,10 @@ public partial class Warden : BasePlugin
         if (playerId == wardenUserId)
         {
             var wardenName = GetWardenName();
+            
+            // Restaurar color
+            SetWardenColor(playerId, false);
+            
             wardenUserId = null;
             if (wardenName != null)
             {
@@ -400,6 +482,10 @@ public partial class Warden : BasePlugin
             if (@event.Team != (byte)Team.CT)
             {
                 var wardenName = GetWardenName();
+                
+                // Restaurar color
+                SetWardenColor(playerId, false);
+                
                 wardenUserId = null;
                 if (wardenName != null)
                 {
