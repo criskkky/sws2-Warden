@@ -69,14 +69,14 @@ public partial class Warden : BasePlugin
     private bool IsPluginEnabled()
     {
         bool isEnabled = wardenEnabledConvar?.Value ?? false;
-        
+
         // Detectar si el plugin se acaba de desactivar
         if (wasPluginEnabled && !isEnabled)
         {
             Log("Plugin disabled via warden_enabled, cleaning up state...", LogLevel.Info);
             CleanupPluginState();
         }
-        
+
         wasPluginEnabled = isEnabled;
         return isEnabled;
     }
@@ -133,22 +133,20 @@ public partial class Warden : BasePlugin
 
     private void SetWardenColor(int playerId, bool isWarden)
     {
-        var player = Core.PlayerManager.GetPlayer(playerId);
-        if (player == null || !player.IsValid) return;
-        
-        var pawn = player.PlayerPawn;
-        if (pawn == null || !pawn.IsValid) return;
-
         Core.Scheduler.NextTick(() =>
         {
+            var player = Core.PlayerManager.GetPlayer(playerId);
+            if (player == null || !player.IsValid) return;
+
+            var pawn = player.PlayerPawn;
             if (pawn == null || !pawn.IsValid) return;
-            
+
             var currentColor = pawn.Render;
             if (isWarden)
             {
                 // Guardar el color actual antes de cambiar a azul
                 savedWardenColor = currentColor;
-                
+
                 // Cambiar solo a azul, manteniendo el alpha actual
                 pawn.Render = new Color((byte)0, (byte)0, (byte)255, currentColor.A);
             }
@@ -233,10 +231,10 @@ public partial class Warden : BasePlugin
 
         var playerName = context.Sender.Controller.PlayerName;
         var playerId = context.Sender.PlayerID;
-        
+
         // Restaurar color antes de quitar el rol
         SetWardenColor(playerId, false);
-        
+
         wardenUserId = null;
         context.Reply(localizer["warden.success.unwarden"]);
         AnnounceWardenChange("warden.log.unwarden", playerName);
@@ -257,13 +255,13 @@ public partial class Warden : BasePlugin
         }
 
         string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
-        
+
         // Restaurar color del warden anterior si existe
         if (wardenUserId != null)
         {
             SetWardenColor(wardenUserId.Value, false);
         }
-        
+
         wardenUserId = null;
 
         if (context.Sender != null)
@@ -340,19 +338,19 @@ public partial class Warden : BasePlugin
         }
 
         string adminName = context.Sender != null ? context.Sender.Controller.PlayerName : "Console";
-        
+
         // Restaurar color del warden anterior si existe
         if (wardenUserId != null)
         {
             SetWardenColor(wardenUserId.Value, false);
         }
-        
+
         wardenUserId = target.PlayerID;
 
         // Cancel incentive timer since we now have a warden
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
-        
+
         // Pintar al nuevo warden de azul
         SetWardenColor(target.PlayerID, true);
 
@@ -432,13 +430,13 @@ public partial class Warden : BasePlugin
     public HookResult OnRoundEnd(EventRoundEnd @event)
     {
         if (!IsPluginEnabled()) return HookResult.Continue;
-        
+
         // Restaurar color del warden al final de la ronda
         if (wardenUserId != null)
         {
             SetWardenColor(wardenUserId.Value, false);
         }
-        
+
         wardenUserId = null;
         incentiveTimerToken?.Cancel();
         incentiveTimerToken = null;
@@ -452,10 +450,10 @@ public partial class Warden : BasePlugin
         if (victimId == wardenUserId)
         {
             var wardenName = GetWardenName();
-            
+
             // Restaurar color
             SetWardenColor(victimId, false);
-            
+
             wardenUserId = null;
             if (wardenName != null)
             {
@@ -473,10 +471,10 @@ public partial class Warden : BasePlugin
         if (playerId == wardenUserId)
         {
             var wardenName = GetWardenName();
-            
+
             // Restaurar color
             SetWardenColor(playerId, false);
-            
+
             wardenUserId = null;
             if (wardenName != null)
             {
@@ -497,10 +495,10 @@ public partial class Warden : BasePlugin
             if (@event.Team != (byte)Team.CT)
             {
                 var wardenName = GetWardenName();
-                
+
                 // Restaurar color
                 SetWardenColor(playerId, false);
-                
+
                 wardenUserId = null;
                 if (wardenName != null)
                 {
