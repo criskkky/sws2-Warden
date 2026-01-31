@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Commands;
 using SwiftlyS2.Shared.Convars;
@@ -94,7 +95,21 @@ public partial class Warden : BasePlugin
     /// </summary>
     private void Log(string message, LogLevel level = LogLevel.Debug)
     {
-        Console.WriteLine($"[Warden:{level}] {message}");
+        switch (level)
+        {
+            case LogLevel.Debug:
+                Core.Logger.LogDebug($"[Warden:{level}] {message}");
+                break;
+            case LogLevel.Info:
+                Core.Logger.LogInformation($"[Warden:{level}] {message}");
+                break;
+            case LogLevel.Warning:
+                Core.Logger.LogWarning($"[Warden:{level}] {message}");
+                break;
+            case LogLevel.Error:
+                Core.Logger.LogError($"[Warden:{level}] {message}");
+                break;
+        }
     }
 
     private void AnnounceWardenChange(string translationKey, params object[] args)
