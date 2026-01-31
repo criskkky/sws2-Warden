@@ -1,10 +1,7 @@
-using System;
-using System.Linq;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.Commands;
 using SwiftlyS2.Shared.Convars;
-using SwiftlyS2.Shared.Events;
 using SwiftlyS2.Shared.GameEventDefinitions;
 using SwiftlyS2.Shared.Misc;
 using SwiftlyS2.Shared.Natives;
@@ -16,12 +13,12 @@ namespace Warden;
 public partial class Warden : BasePlugin
 {
     private int? wardenUserId = null;
-    private System.Threading.CancellationTokenSource? incentiveTimerToken = null;
+    private CancellationTokenSource? incentiveTimerToken = null;
     private IConVar<bool>? wardenEnabledConvar;
     private bool wasPluginEnabled = true;
     private Color? savedWardenColor = null; // Guardar el color original del warden
 
-    private enum LogLevel { Debug, Info, Warning, Error }
+    private enum PluginLogLevel { Debug, Info, Warning, Error }
 
     public Warden(ISwiftlyCore core) : base(core)
     {
@@ -39,7 +36,7 @@ public partial class Warden : BasePlugin
     {
         // Use CreateOrFind to handle both initial load and hot reload scenarios
         wardenEnabledConvar = Core.ConVar.CreateOrFind<bool>("warden_enabled", "Enable/Disable Warden plugin", false);
-        Log($"Warden plugin loaded. warden_enabled = {wardenEnabledConvar.Value}", LogLevel.Info);
+        Log($"Warden plugin loaded. warden_enabled = {wardenEnabledConvar.Value}", PluginLogLevel.Info);
 
         // Register Commands
         Core.Command.RegisterCommand("w", OnWarden);
@@ -72,7 +69,7 @@ public partial class Warden : BasePlugin
         // Detectar si el plugin se acaba de desactivar
         if (wasPluginEnabled && !isEnabled)
         {
-            Log("Plugin disabled via warden_enabled, cleaning up state...", LogLevel.Info);
+            Log("Plugin disabled via warden_enabled, cleaning up state...", PluginLogLevel.Info);
             CleanupPluginState();
         }
         
@@ -90,11 +87,19 @@ public partial class Warden : BasePlugin
 
     // Helper Methods
     /// <summary>
-    /// Logs a message to console with log level prefix
+    /// Logs a message with log level
     /// </summary>
-    private void Log(string message, LogLevel level = LogLevel.Debug)
+    private void Log(string message, PluginLogLevel level = PluginLogLevel.Debug)
     {
-        Console.WriteLine($"[Warden:{level}] {message}");
+        var logLevel = level switch
+        {
+            PluginLogLevel.Debug => LogLevel.Debug,
+            PluginLogLevel.Info => LogLevel.Information,
+            PluginLogLevel.Warning => LogLevel.Warning,
+            PluginLogLevel.Error => LogLevel.Error,
+            _ => LogLevel.Debug
+        };
+        Core.Logger.Log(logLevel, $"[Warden:{level}] {message}");
     }
 
     private void AnnounceWardenChange(string translationKey, params object[] args)
@@ -129,13 +134,22 @@ public partial class Warden : BasePlugin
             if (pawn == null || !pawn.IsValid) return;
             
             var currentColor = pawn.Render;
+            if (player == null || !player.IsValid) return;
+
+            var currentPawn = player.PlayerPawn;
+            if (currentPawn == null || !currentPawn.IsValid) return;
+            if (!ReferenceEquals(currentPawn, pawn)) return;
+
+            var pawnColor = currentPawn.Render;
             if (isWarden)
             {
                 // Guardar el color actual antes de cambiar a azul
                 savedWardenColor = currentColor;
+                savedWardenColor = pawnColor;
                 
                 // Cambiar solo a azul, manteniendo el alpha actual
                 pawn.Render = new Color((byte)0, (byte)0, (byte)255, currentColor.A);
+                currentPawn.Render = new Color((byte)0, (byte)0, (byte)255, pawnColor.A);
             }
             else
             {
@@ -143,15 +157,18 @@ public partial class Warden : BasePlugin
                 if (savedWardenColor.HasValue)
                 {
                     pawn.Render = savedWardenColor.Value;
+                    currentPawn.Render = savedWardenColor.Value;
                     savedWardenColor = null;
                 }
                 else
                 {
                     // Fallback: restaurar a blanco si no hay color guardado
                     pawn.Render = new Color((byte)255, (byte)255, (byte)255, currentColor.A);
+                    currentPawn.Render = new Color((byte)255, (byte)255, (byte)255, pawnColor.A);
                 }
             }
             pawn.RenderUpdated();
+            currentPawn.RenderUpdated();
         });
     }
 
@@ -201,7 +218,7 @@ public partial class Warden : BasePlugin
         SetWardenColor(context.Sender.PlayerID, true);
 
         AnnounceWardenChange("warden.log.become", context.Sender.Controller.PlayerName);
-        Log($"Player {context.Sender.Controller.PlayerName} became warden.", LogLevel.Info);
+        Log($"Player {context.Sender.Controller.PlayerName} became warden.", PluginLogLevel.Info);
     }
 
     public void OnUnwarden(ICommandContext context)
@@ -225,7 +242,7 @@ public partial class Warden : BasePlugin
         wardenUserId = null;
         context.Reply(localizer["warden.success.unwarden"]);
         AnnounceWardenChange("warden.log.unwarden", playerName);
-        Log($"Player {playerName} is no longer warden.", LogLevel.Info);
+        Log($"Player {playerName} is no longer warden.", PluginLogLevel.Info);
     }
 
     public void OnRemoveWarden(ICommandContext context)
@@ -261,7 +278,7 @@ public partial class Warden : BasePlugin
             context.Reply($"Admin {adminName} removed the warden.");
         }
         AnnounceWardenChange("warden.admin.removed", adminName);
-        Log($"Admin {adminName} removed the warden.", LogLevel.Info);
+        Log($"Admin {adminName} removed the warden.", PluginLogLevel.Info);
     }
 
     public void OnSetWarden(ICommandContext context)
@@ -351,7 +368,7 @@ public partial class Warden : BasePlugin
             context.Reply($"Admin {adminName} set {target.Controller.PlayerName} as warden.");
         }
         AnnounceWardenChange("warden.admin.set", adminName, target.Controller.PlayerName);
-        Log($"Admin {adminName} set {target.Controller.PlayerName} as warden.", LogLevel.Info);
+        Log($"Admin {adminName} set {target.Controller.PlayerName} as warden.", PluginLogLevel.Info);
     }
 
     // Hooks
@@ -446,7 +463,7 @@ public partial class Warden : BasePlugin
             {
                 AnnounceWardenChange("warden.log.died", wardenName);
             }
-            Log("Warden died.", LogLevel.Info);
+            Log("Warden died.", PluginLogLevel.Info);
         }
         return HookResult.Continue;
     }
@@ -467,7 +484,7 @@ public partial class Warden : BasePlugin
             {
                 AnnounceWardenChange("warden.log.disconnected", wardenName);
             }
-            Log("Warden disconnected.", LogLevel.Info);
+            Log("Warden disconnected.", PluginLogLevel.Info);
         }
         return HookResult.Continue;
     }
@@ -491,7 +508,7 @@ public partial class Warden : BasePlugin
                 {
                     AnnounceWardenChange("warden.log.team_change", wardenName);
                 }
-                Log("Warden changed team.", LogLevel.Info);
+                Log("Warden changed team.", PluginLogLevel.Info);
             }
         }
         return HookResult.Continue;
